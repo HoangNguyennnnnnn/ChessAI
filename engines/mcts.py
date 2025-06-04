@@ -1,114 +1,170 @@
 # engines/mcts.py
 
 import chess
-import random
 import math
-import time
+from engines.greedy import greedy_move  # import hàm greedy_move
 
 
 class MCTSNode:
     def __init__(self, board: chess.Board, parent=None, move=None):
-        self.board = board
-        self.parent = parent
-        self.move = move  # move đưa board từ parent -> node này
-        self.children = []
-        self.visits = 0
-        self.wins = 0
+        self.board = board              # Trạng thái cờ tại node này
+        self.parent = parent            # Node cha
+        self.move = move                # Nước đi đưa từ parent → node này
+        self.children = []              # Danh sách các node con
+        self.visits = 0                 # Số lần node này được thăm
+        self.value_sum = 0.0            # Tổng reward tích lũy (từ góc White perspective)
 
-    def is_fully_expanded(self):
+    def is_fully_expanded(self) -> bool:
+        """
+        Trả về True nếu node đã mở (expand) hết mọi nước đi hợp lệ.
+        """
         return len(self.children) == len(list(self.board.legal_moves))
 
-    def best_child(self, c_param=1.4):
-        choices = []
-        for child in self.children:
-            # UCT = w_i / n_i + c * sqrt(ln N / n_i)
-            if child.visits == 0:
-                uct = float('inf')
-            else:
-                uct = child.wins / child.visits + c_param * math.sqrt(math.log(self.visits) / child.visits)
-            choices.append((uct, child))
-        return max(choices, key=lambda x: x[0])[1]
-
     def expand(self):
-        tried_moves = [child.move for child in self.children]
-        for move in self.board.legal_moves:
+        """
+        PHASE 2 – EXPANSION:
+        - Chọn một nước move hợp lệ mà node hiện tại chưa có con tương ứng.
+        - Tạo node con mới, đẩy move đó lên board, thêm vào children và trả về node con.
+        - Nếu đã thử hết mọi nước hợp lệ thì trả về None.
+        """
+        tried_moves = {child.move for child in self.children}
+        moves = list(self.board.legal_moves)
+
+        for move in moves:
             if move not in tried_moves:
                 next_board = self.board.copy()
                 next_board.push(move)
                 child_node = MCTSNode(next_board, parent=self, move=move)
                 self.children.append(child_node)
                 return child_node
-        return None  # đã mở hết
 
-    def simulate(self):
-        """
-        Mô phỏng rollout ngẫu nhiên cho đến khi game kết thúc.
-        Trả về 1 nếu trắng thắng, 0.5 hòa, 0 nếu đen thắng.
-        """
-        simulation_board = self.board.copy()
-        while not simulation_board.is_game_over():
-            move = random.choice(list(simulation_board.legal_moves))
-            simulation_board.push(move)
-        result = simulation_board.result()
-        if result == "1-0":
-            return 1.0
-        elif result == "0-1":
-            return 0.0
-        else:
-            return 0.5
+        return None  # Đã expand hết mọi nước hợp lệ
 
-    def backpropagate(self, result):
+    def best_child(self, c_param: float = 1.4):
         """
-        result: 1.0 (white win), 0.5 (draw), 0.0 (black win)
-        Nếu node.board.turn là White đang chơi, thì:
-            - Nếu result = 1 (white thắng), đây là thắng -> cộng wins
-            - Nếu result = 0 (black thắng), ngược lại
-        Nhưng thường switch interpretation:
-        wins = số điểm với perspective của người *đã chọn move* ở parent.
-        Cho gọn: giả sử xem kết quả từ White perspective:
-            - child.wins cộng result nếu white; = (1-result) nếu black.
-        Sau cùng trong best_child, chỉ quan tâm tỷ lệ wins/visits.
+        PHASE 1 (trong vòng lặp Selection) – Compute UCT và chọn child có UCT cao nhất.
+        UCT(child) = (Q_child / N_child) + c_param * sqrt( ln(N_parent) / N_child )
+          - Q_child / N_child  là exploitation (trung bình reward của child)
+          - c_param * sqrt( ln(N_parent) / N_child )  là exploration
+        Nếu child.visits == 0 → cho UCT = +inf để ưu tiên mở rộng trước (exploration).
+        """
+        best_score = -float('inf')
+        best_node = None
+
+        for child in self.children:
+            if child.visits == 0:
+                # Nếu chưa thăm, luôn xếp ưu tiên cao nhất
+                score = float('inf')
+            else:
+                avg_value = child.value_sum / child.visits
+                score = avg_value + c_param * math.sqrt(
+                    math.log(self.visits) / child.visits
+                )
+
+            if score > best_score:
+                best_score = score
+                best_node = child
+
+        return best_node
+
+    def backpropagate(self, reward: float):
+        """
+        PHASE 4 – BACKPROPAGATION:
+        - Cập nhật visits và value_sum tại node này.
+        - Đổi dấu reward khi truyền lên node cha (vì góc nhìn luân phiên White ↔ Black).
+        reward ∈ {+1, 0, -1} luôn tính từ White perspective:
+          +1 → White thắng, -1 → Black thắng, 0 → Hòa.
         """
         self.visits += 1
-        # Xét result từ góc trắng: nếu node.board.turn = trắng => nghĩa là
-        # parent đã cho nước. Tiếp tục propagate lên:
-        self.wins += result
-        if self.parent:
-            # Khi parent là lượt khác (đen), kết quả white thắng = kết quả parent perspective?
-            # Để đơn giản, ta truyền result unchanged và mỗi node cộng result nếu node.turn=white, cộng (1-result) nếu node.turn=black.
-            # Nhưng vì mình cộng wins đơn giản, best_child sẽ ưu tiên tỉ lệ wins, không cần đổi result.
-            self.parent.backpropagate(result)
+        self.value_sum += reward
+
+        if self.parent is not None:
+            # Đổi dấu reward khi lan ngược lên node cha
+            self.parent.backpropagate(-reward)
 
 
-def run_mcts(root_board: chess.Board, time_limit: float = 1.0) -> chess.Move:
+def select_node(root: MCTSNode, c_param: float) -> MCTSNode:
     """
-    Thực hiện MCTS trong khoảng time_limit (giây), trả về best move.
+    PHASE 1 – SELECTION:
+    - Bắt đầu từ root, lặp chọn child có UCT cao nhất (best_child) cho đến khi:
+      • Node hiện tại chưa fully expanded ➔ dừng lại trả về node đó (để Expansion).
+      • Hoặc Node đã terminal (board.is_game_over()) ➔ trả về node đó (để Simulation).
     """
-    root = MCTSNode(root_board.copy())
-    end_time = time.time() + time_limit
-
-    # Nếu board đã hết (chiếu hết hoặc hòa), return None
-    if root_board.is_game_over():
-        return None
-
-    while time.time() < end_time:
-        leaf = tree_policy(root)
-        reward = leaf.simulate()
-        leaf.backpropagate(reward)
-
-    # Lấy child nhiều visits nhất
-    best_child = max(root.children, key=lambda c: c.visits)
-    return best_child.move
-
-
-def tree_policy(node: MCTSNode) -> MCTSNode:
-    """
-    Nếu node chưa fully expanded: expand và return node mới.
-    Nếu đã, chọn child tốt nhất (theo UCT) và tiếp tục xuống.
-    """
+    node = root
     while not node.board.is_game_over():
         if not node.is_fully_expanded():
-            return node.expand()
+            # Node còn nước chưa thử → dừng selection, sẽ expand từ đây
+            return node
         else:
-            node = node.best_child()
-    return node
+            # Node đã fully expanded → tiếp tục descent xuống best_child
+            node = node.best_child(c_param)
+    return node  # Nếu là node terminal thì trả về luôn
+
+
+def simulate_to_end(board: chess.Board) -> int:
+    """
+    PHASE 3 – SIMULATION (Rollout greedy cho đến khi game kết thúc):
+    - Sao chép board, liên tục gọi greedy_move để chọn nước “tốt nhất” tại mỗi trạng thái
+    - Kết quả trả về ∈ {+1, 0, -1} theo White perspective:
+      +1  → White thắng (“1-0”)
+      -1  → Black thắng (“0-1”)
+       0  → Hoà (“1/2-1/2”)
+    """
+    sim_board = board.copy()
+
+    while not sim_board.is_game_over():
+        move = greedy_move(sim_board)
+        # Nếu greedy_move trả về None (ví dụ không có nước đi), break để tránh loop vô hạn
+        if move is None:
+            break
+        sim_board.push(move)
+
+    result = sim_board.result()
+    if result == "1-0":
+        return +1
+    elif result == "0-1":
+        return -1
+    else:
+        return 0
+
+
+def run_mcts(root_board: chess.Board,
+             n_simulations: int = 100,
+             c_param: float = 1.4) -> chess.Move:
+    """
+    Hàm chính gọi MCTS cho cờ vua:
+    1) Khởi tạo root node từ trạng thái root_board.
+    2) Chạy n_simulations vòng lặp MCTS:
+       a) SELECTION:    node = select_node(root, c_param)
+       b) EXPANSION:    nếu node chưa game_over, thì child = node.expand(),
+                        nếu node terminal thì child = node
+       c) SIMULATION:   reward = simulate_to_end(child.board)
+       d) BACKPROPAGATION: child.backpropagate(reward)
+    3) Cuối cùng, từ root.children chọn node con có visits lớn nhất → trả về nước move đó.
+    """
+    root = MCTSNode(root_board.copy())
+
+    for _ in range(n_simulations):
+        # ----- 1) SELECTION -----
+        node_to_expand = select_node(root, c_param)
+
+        # ----- 2) EXPANSION -----
+        if not node_to_expand.board.is_game_over():
+            child = node_to_expand.expand()
+        else:
+            # Nếu node selection đã là terminal, không expand, simulation trực tiếp
+            child = node_to_expand
+
+        # ----- 3) SIMULATION -----
+        reward = simulate_to_end(child.board)
+
+        # ----- 4) BACKPROPAGATION -----
+        child.backpropagate(reward)
+
+    # Nếu root không có con (ví dụ không có nước đi hợp lệ), trả None
+    if not root.children:
+        return None
+
+    # Chọn child có visits nhiều nhất để đưa ra move cuối cùng
+    best_child = max(root.children, key=lambda c: c.visits)
+    return best_child.move

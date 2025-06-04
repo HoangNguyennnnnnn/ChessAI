@@ -1,14 +1,14 @@
 import chess
 import torch
-import torch.nn.functional as F
 import math, numpy as np
-from engines.helpers import board_to_tensor
+import random
+from engines.helpers import board_to_tensor,evaluate_board
 from engines.network_model import PolicyNet   # cần chứa đúng định nghĩa của PolicyNet
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Load đúng cấu hình đã train:
 model = PolicyNet(num_res_blocks=20, num_channels=256, action_size=4096).to(DEVICE)
-model.load_state_dict(torch.load("models/policy_supervised.pt", map_location=DEVICE))
+model.load_state_dict(torch.load("models/policy_supervised_final.pt", map_location=DEVICE))
 model.eval()
 
 def move_to_index(move: chess.Move) -> int:
@@ -33,6 +33,7 @@ class MCTSNode:
             logits = model(board_tensor)    # (1,4096)
         logits = logits.cpu().numpy().reshape(-1)
         legal_moves = list(self.board.legal_moves)
+        random.shuffle(legal_moves)
         indices = [move_to_index(m) for m in legal_moves]
         logits_legal = np.array([logits[i] for i in indices], dtype=np.float32)
         exp = np.exp(logits_legal - np.max(logits_legal))
@@ -67,7 +68,7 @@ def backpropagate(node: MCTSNode, reward: float):
         current = parent
         v = -v  # Đảo reward cho lượt khác
 
-def run_mcts_supervised(root_board: chess.Board, n_simulations=400, c_puct=1.0):
+def run_mcts_supervised(root_board: chess.Board, n_simulations=400, c_puct=1.4):
     root = MCTSNode(root_board.copy())
     root.expand()
     for _ in range(n_simulations):
@@ -88,7 +89,10 @@ def run_mcts_supervised(root_board: chess.Board, n_simulations=400, c_puct=1.0):
         if not node.board.is_game_over():
             node.expand()
             # Dùng heuristic nhỏ cho reward giai đoạn leaf: 0 (hòa)
-            reward = 0.0
+            # Tính giá trị centipawn rồi chuẩn hóa thành reward ∈ [−1, 1]
+            score = evaluate_board(node.board)  # ví dụ ± vài trăm
+            # Chọn K ≈ 1000 (có thể điều chỉnh tùy tập dữ liệu centipawn thực tế)
+            reward = math.tanh(score / 1000.0)
         else:
             res = node.board.result()
             if res == "1-0": reward = 1.0

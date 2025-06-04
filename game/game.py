@@ -43,13 +43,49 @@ class Game:
         else:
             return None
 
-    def human_move(self, source_sq, target_sq):
+    def human_move(self, source_sq, target_sq, promotion_piece=None):
         """
-        source_sq, target_sq có thể là index 0-63 (hoặc 'e2', 'e4')
-        Giả sử bạn dùng GUI để translate pixel -> sq.
+        source_sq, target_sq: int (0-63)
+        promotion_piece: None hoặc một ký tự 'q','r','b','n' (lowercase) tương ứng Queen, Rook, Bishop, Knight
+        Trả về:
+          - (True, None) nếu đã push thành công (nếu không cần promotion hoặc promotion_piece đã có)
+          - (False, 'PROMOTION') nếu cần phải chọn phong cấp (pawn vừa chạm hàng cuối nhưng promotion_piece=None)
+          - (False, None) nếu nước không hợp lệ
         """
+        # Xác định xem có phải quân Pawn đang di chuyển tới hàng cuối không
+        piece = self.board.piece_at(source_sq)
+        if piece and piece.piece_type == chess.PAWN:
+            # Tìm rank (0..7) của target_sq
+            rank = chess.square_rank(target_sq)
+            # White: nếu đến rank 7 → promotion; Black: nếu đến rank 0 → promotion
+            if (piece.color == chess.WHITE and rank == 7) or (piece.color == chess.BLACK and rank == 0):
+                # Nếu chưa có promotion_piece, báo cần chọn loại
+                if promotion_piece is None:
+                    return False, 'PROMOTION'
+                else:
+                    # Tạo move với promotion
+                    promo_map = {
+                        'q': chess.QUEEN,
+                        'r': chess.ROOK,
+                        'b': chess.BISHOP,
+                        'n': chess.KNIGHT
+                    }
+                    if promotion_piece.lower() in promo_map:
+                        move = chess.Move(source_sq, target_sq, promotion=promo_map[promotion_piece.lower()])
+                    else:
+                        # Nếu promotion_piece không hợp lệ, trả False
+                        return False, None
+
+                    if move in self.board.legal_moves:
+                        self.board.push(move)
+                        return True, None
+                    else:
+                        return False, None
+
+        # Nếu không phải promotion case, tạo move bình thường
         move = chess.Move(source_sq, target_sq)
         if move in self.board.legal_moves:
             self.board.push(move)
-            return True
-        return False
+            return True, None
+        else:
+            return False, None

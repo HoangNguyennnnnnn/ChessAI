@@ -13,6 +13,9 @@ BUTTON_HEIGHT = 50
 BUTTON_MARGIN = 10
 FONT_SIZE = 24
 
+PROMO_BG = (240, 240, 200)
+PROMO_TEXT = (0, 0, 0)
+
 # Danh sách tên các engine
 ENGINE_NAMES = [
     "Human",
@@ -34,9 +37,9 @@ def get_engine_function(choice, color):
     elif choice == "Negamax":
         return lambda board: negamax.get_best_move(board, depth=3)
     elif choice == "MCTS":
-        return lambda board: mcts.run_mcts(board, time_limit=1.0)
+        return lambda board: mcts.run_mcts(board, n_simulations = 80)
     elif choice == "MCTS_supervised":
-            return lambda board: mcts_supervised.run_mcts_supervised(board, n_simulations=10, c_puct=2.0)[0]
+            return lambda board: mcts_supervised.run_mcts_supervised(board, n_simulations=40, c_puct=1.44)[0]
     else:
         return None
 
@@ -159,6 +162,35 @@ def show_menu(screen):
     # Sau khi nhấn Start: trả về 2 lựa chọn
     return choice_white, choice_black
 
+def draw_promotion_popup(screen, target_sq, font):
+    """
+    Vẽ 4 ô nhỏ có chữ 'Q','R','B','N' ngay phía trên ô target_sq.
+    target_sq: số từ 0..63, tính pixel thông qua square_to_pixel.
+    Yêu cầu: đã import square_to_pixel, SQUARE_SIZE.
+    """
+    from gui.gui_utils import square_to_pixel
+    x0, y0 = square_to_pixel(target_sq)
+    # Vẽ 4 ô ngang: Q R B N, mỗi ô vuông SQUARE_SIZE/2 kích thước
+    size = SQUARE_SIZE // 2
+    # Tọa độ khởi đầu (để ô Q nằm bên trái nhất)
+    start_x = x0 + (SQUARE_SIZE - 4*size) // 2
+    start_y = y0  # có thể vẽ phía trên hoặc trên cùng ô
+
+    promo_pieces = ['q', 'r', 'b', 'n']
+    rects = []
+    for i, p in enumerate(promo_pieces):
+        rx = start_x + i * size
+        ry = y0  # vẽ ngay ô này
+        rect = pygame.Rect(rx, ry, size, size)
+        pygame.draw.rect(screen, PROMO_BG, rect)
+        pygame.draw.rect(screen, (50,50,50), rect, 1)
+
+        text_surf = font.render(p.upper(), True, PROMO_TEXT)
+        text_rect = text_surf.get_rect(center=rect.center)
+        screen.blit(text_surf, text_rect)
+        rects.append((rect, p))
+    return rects  # trả về danh sách [(Rect, 'q'), (Rect,'r'),...]
+
 
 def main():
     pygame.init()
@@ -176,42 +208,86 @@ def main():
     running = True
     clock = pygame.time.Clock()
 
+    pending_promotion = None
+    selected_square = None
+
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+
             if event.type == pygame.MOUSEBUTTONDOWN:
                 pos = pygame.mouse.get_pos()
                 sq = pixel_to_square(pos[0], pos[1])
+
+                # Nếu đang chờ chọn quân để promotion
+                if pending_promotion is not None:
+                    # Vẽ popup và kiểm tra click vào ô promotion
+                    # Để đơn giản, chúng ta dựa vào popup_rects tính được trước đó
+                    for rect, p_char in popup_rects:
+                        if rect.collidepoint(pos):
+                            src, dst = pending_promotion
+                            ok, flag = game.human_move(src, dst, promotion_piece=p_char)
+                            # Kết quả phải ok==True
+                            pending_promotion = None
+                            selected_square = None
+                            popup_rects = []
+                            break
+                    continue  # Bỏ qua phần chọn normal khi đang popup
+
+                # Nếu không trong tình trạng promotion popup
                 if sq is not None:
-                    # Nếu người chơi nhấn khi đến lượt của chính họ
+                    # Nếu đến lượt Human
                     if ((game.board.turn == chess.WHITE and engine_w is None) or
-                        (game.board.turn == chess.BLACK and engine_b is None)):
+                            (game.board.turn == chess.BLACK and engine_b is None)):
                         if selected_square is None:
+                            # Lần đầu click: chọn quân
                             if game.board.piece_at(sq) and \
-                               ((game.board.turn == chess.WHITE and game.board.piece_at(sq).color == chess.WHITE) or \
-                                (game.board.turn == chess.BLACK and game.board.piece_at(sq).color == chess.BLACK)):
+                                    ((game.board.turn == chess.WHITE and game.board.piece_at(
+                                        sq).color == chess.WHITE) or \
+                                     (game.board.turn == chess.BLACK and game.board.piece_at(sq).color == chess.BLACK)):
                                 selected_square = sq
                         else:
-                            if game.human_move(selected_square, sq):
+                            # Lần thứ hai click: muốn đi nước
+                            ok, flag = game.human_move(selected_square, sq)
+                            if flag == 'PROMOTION':
+                                # Cần mở popup chọn promotion
+                                pending_promotion = (selected_square, sq)
+                                # Tạo popup_rects để vẽ ra 4 ô promotion
+                                popup_rects = draw_promotion_popup(screen, sq, pygame.font.SysFont(None, 24))
+                                # Lập tức vẽ và cập nhật màn hình
+                                pygame.display.flip()
+                            elif ok:
+                                # Nước đi bình thường thành công
                                 selected_square = None
                             else:
+                                # Nước đi không hợp lệ → reset selection để chọn lại
                                 selected_square = None
 
-        # Lượt AI thực hiện nếu có
+        # Lượt AI
         if not game.is_game_over():
             if (game.board.turn == chess.WHITE and engine_w) or (game.board.turn == chess.BLACK and engine_b):
                 ai_move = game.engine_move()
                 if ai_move:
                     game.apply_move(ai_move)
 
-        # Vẽ bàn cờ và quân
+        # Vẽ lại bàn cờ
         renderer.draw_board()
         renderer.draw_pieces(game.board)
 
+        # Nếu đang có ô được chọn, highlight
         if selected_square is not None:
             x, y = square_to_pixel(selected_square)
             pygame.draw.rect(screen, (0, 255, 0), (x, y, SQUARE_SIZE, SQUARE_SIZE), 3)
+
+        # Nếu đang chờ popup, vẽ popup (đã lưu popup_rects từ lúc set promotion)
+        if pending_promotion is not None:
+            for rect, p_char in popup_rects:
+                pygame.draw.rect(screen, PROMO_BG, rect)
+                pygame.draw.rect(screen, (50, 50, 50), rect, 1)
+                text_surf = pygame.font.SysFont(None, 24).render(p_char.upper(), True, PROMO_TEXT)
+                text_rect = text_surf.get_rect(center=rect.center)
+                screen.blit(text_surf, text_rect)
 
         pygame.display.flip()
         clock.tick(30)

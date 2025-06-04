@@ -3,42 +3,59 @@
 import chess
 from engines.helpers import evaluate_board
 
-INFINITY = 10_000
+INFINITY = 1_000_000
+
 
 def negamax_ab(board: chess.Board, depth: int, alpha: int, beta: int, color: int) -> int:
     """
-    Negamax với cắt tỉa alpha-beta.
-    - board: trạng thái bàn cờ.
-    - depth: độ sâu còn lại.
-    - alpha, beta: tham số cắt nhánh.
-    - color: = +1 nếu đang tính cho White (maximize), = -1 nếu cho Black.
-    Trả về giá trị kleur * evaluation (đã chứa color).
+    Negamax với cắt tỉa alpha-beta, sử dụng evaluate_board từ engines/helpers.py.
+
+    - board: trạng thái bàn cờ (python-chess).
+    - depth: số bước (plies) còn lại.
+    - alpha, beta: giới hạn cắt tỉa (int, centipawn).
+    - color: +1 nếu tính cho White, -1 nếu tính cho Black.
+
+    Trả về: color * eval_centipawn (int).
     """
-    # Nếu dừng điều kiện cơ bản
+    # Điều kiện dừng: đã tới độ sâu 0 hoặc game kết thúc
     if depth == 0 or board.is_game_over():
         return color * evaluate_board(board)
 
     max_eval = -INFINITY
-    for move in board.legal_moves:
+
+    # === Move Ordering: xếp các nước bắt quân lên trước ===
+    legal_moves = list(board.legal_moves)
+    legal_moves.sort(key=lambda mv: board.is_capture(mv), reverse=True)
+
+    for move in legal_moves:
         board.push(move)
-        # Chú ý hoán đổi vai trò alpha, beta và color
-        val = -negamax_ab(board, depth - 1, -beta, -alpha, -color)
+        # Hoán đổi vai trò alpha, beta và color
+        score = -negamax_ab(board, depth - 1, -beta, -alpha, -color)
         board.pop()
 
-        if val > max_eval:
-            max_eval = val
+        if score > max_eval:
+            max_eval = score
         if max_eval > alpha:
             alpha = max_eval
-        # Nếu alpha ≥ beta, cắt nhánh
+        # Cắt nhánh nếu alpha >= beta
         if alpha >= beta:
             break
 
     return max_eval
 
+
 def get_best_move(board: chess.Board, depth: int = 3) -> chess.Move:
     """
-    Wrapper trả về best move theo Negamax alpha-beta.
-    - Nếu tới lượt White, color = +1; nếu đến lượt Black, color = -1.
+    Wrapper để lấy nước đi tốt nhất với Negamax + Alpha-Beta + Move Ordering.
+
+    - Nếu đến lượt White: color = +1
+    - Nếu đến lượt Black: color = -1
+
+    Tham số:
+    - board: python-chess.Board đang ở vị thế cần chọn nước.
+    - depth: số plies (cộng độ sâu) để search.
+
+    Trả về: đối tượng chess.Move hoặc None nếu không có nước.
     """
     best_move = None
     alpha = -INFINITY
@@ -46,9 +63,12 @@ def get_best_move(board: chess.Board, depth: int = 3) -> chess.Move:
     color = 1 if board.turn == chess.WHITE else -1
     best_value = -INFINITY
 
-    for move in board.legal_moves:
+    # Sắp xếp trước các nước bắt quân để cắt nhánh sớm hơn
+    legal_moves = list(board.legal_moves)
+    legal_moves.sort(key=lambda mv: board.is_capture(mv), reverse=True)
+
+    for move in legal_moves:
         board.push(move)
-        # Kết quả đánh giá = -negamax ở depth-1, hoán đổi alpha, beta, color
         value = -negamax_ab(board, depth - 1, -beta, -alpha, -color)
         board.pop()
 
@@ -57,7 +77,8 @@ def get_best_move(board: chess.Board, depth: int = 3) -> chess.Move:
             best_move = move
         if best_value > alpha:
             alpha = best_value
-        # Cắt nhánh tạm nếu muốn (không bắt buộc ở node gốc)
-        # if alpha >= beta: break
+        # Có thể mở cắt nhánh tại root nếu muốn:
+        # if alpha >= beta:
+        #     break
 
     return best_move
