@@ -37,7 +37,7 @@ def get_engine_function(choice, color):
     elif choice == "Negamax":
         return lambda board: negamax.get_best_move(board, depth=3)
     elif choice == "MCTS":
-        return lambda board: mcts.run_mcts(board, n_simulations = 80)
+        return lambda board: mcts.run_mcts(board, n_simulations = 10)
     elif choice == "MCTS_supervised":
             return lambda board: mcts_supervised.run_mcts_supervised(board, n_simulations=40, c_puct=1.44)[0]
     else:

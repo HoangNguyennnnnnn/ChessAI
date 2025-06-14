@@ -89,5 +89,6 @@ def get_best_move(board: chess.Board, depth: int = 3) -> chess.Move:
             if min_eval < beta:
                 beta = min_eval
             # Tương tự, có thể cắt nhánh tại node gốc:
-            # if alpha >= beta: break
+            if alpha >= beta:
+                break
         return best_move

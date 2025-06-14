@@ -25,7 +25,7 @@ def negamax_ab(board: chess.Board, depth: int, alpha: int, beta: int, color: int
 
     # === Move Ordering: xếp các nước bắt quân lên trước ===
     legal_moves = list(board.legal_moves)
-    legal_moves.sort(key=lambda mv: board.is_capture(mv), reverse=True)
+    legal_moves.sort(key=lambda mv: (board.is_capture(mv), board.gives_check(mv)), reverse=True)
 
     for move in legal_moves:
         board.push(move)
@@ -77,8 +77,8 @@ def get_best_move(board: chess.Board, depth: int = 3) -> chess.Move:
             best_move = move
         if best_value > alpha:
             alpha = best_value
-        # Có thể mở cắt nhánh tại root nếu muốn:
-        # if alpha >= beta:
-        #     break
+
+        if alpha >= beta:
+            break
 
     return best_move
