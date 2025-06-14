@@ -45,18 +45,6 @@ def negamax_ab(board: chess.Board, depth: int, alpha: int, beta: int, color: int
 
 
 def get_best_move(board: chess.Board, depth: int = 3) -> chess.Move:
-    """
-    Wrapper để lấy nước đi tốt nhất với Negamax + Alpha-Beta + Move Ordering.
-
-    - Nếu đến lượt White: color = +1
-    - Nếu đến lượt Black: color = -1
-
-    Tham số:
-    - board: python-chess.Board đang ở vị thế cần chọn nước.
-    - depth: số plies (cộng độ sâu) để search.
-
-    Trả về: đối tượng chess.Move hoặc None nếu không có nước.
-    """
     best_move = None
     alpha = -INFINITY
     beta = INFINITY
