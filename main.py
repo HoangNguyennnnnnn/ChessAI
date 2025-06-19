@@ -39,7 +39,7 @@ def get_engine_function(choice, color):
     elif choice == "MCTS":
         return lambda board: mcts.run_mcts(board, n_simulations = 10)
     elif choice == "MCTS_supervised":
-            return lambda board: mcts_supervised.run_mcts_supervised(board, n_simulations=40, c_puct=1.44)[0]
+            return lambda board: mcts_supervised.run_mcts_supervised(board, n_simulations=10, c_puct=1.44)[0]
     else:
         return None
 

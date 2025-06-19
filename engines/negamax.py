@@ -53,7 +53,7 @@ def get_best_move(board: chess.Board, depth: int = 3) -> chess.Move:
 
     # Sắp xếp trước các nước bắt quân để cắt nhánh sớm hơn
     legal_moves = list(board.legal_moves)
-    legal_moves.sort(key=lambda mv: board.is_capture(mv), reverse=True)
+    legal_moves.sort(key=lambda mv: (board.is_capture(mv), board.gives_check(mv)), reverse=True)
 
     for move in legal_moves:
         board.push(move)
