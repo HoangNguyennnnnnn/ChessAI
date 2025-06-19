@@ -6,7 +6,6 @@ from engines.helpers import board_to_tensor,evaluate_board
 from engines.network_model import PolicyNet   # cần chứa đúng định nghĩa của PolicyNet
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# Load đúng cấu hình đã train:
 model = PolicyNet(num_res_blocks=20, num_channels=256, action_size=4096).to(DEVICE)
 model.load_state_dict(torch.load("models/policy_supervised_final.pt", map_location=DEVICE))
 model.eval()
@@ -106,6 +105,3 @@ def run_mcts_supervised(root_board: chess.Board, n_simulations=400, c_puct=1.4):
     pi_vec = {move: root.N[move] for move in root.N}
     best_move = max(pi_vec, key=lambda m: pi_vec[m])
     return best_move,pi_vec
-
-# Khi tích hợp vào main.py, bạn có thể gọi:
-# run_mcts_supervised(board, n_simulations=200, c_puct=1.0)[0] để lấy move.

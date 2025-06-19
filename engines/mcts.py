@@ -4,6 +4,7 @@ import chess
 import math
 from engines.greedy import greedy_move  # hàm greedy_move
 from engines.helpers import evaluate_board  # heuristic evaluation
+import random
 
 
 class MCTSNode:
@@ -65,9 +66,10 @@ def simulate(node_board: chess.Board, max_depth: int = 20) -> float:
     b = node_board.copy()
     depth = 0
     while not b.is_game_over() and depth < max_depth:
-        mv = greedy_move(b)
-        if mv is None:
+        legal_moves = list(b.legal_moves)
+        if not legal_moves:
             break
+        mv = random.choice(legal_moves)
         b.push(mv)
         depth += 1
     # Nếu game_over thì kết quả +-1 hoặc 0, ngược lại dùng đánh giá nhanh
